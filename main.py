@@ -41,4 +41,4 @@ if prompt := st.chat_input("메시지를 입력하세요..."):
     # 3) 어시스턴트 메시지 추가
     st.session_state.messages.append({"role": "assistant", "content": reply})
     # 4) 페이지 리로드하여 새 메시지 표시
-    st.experimental_rerun()
+    st.rerun()

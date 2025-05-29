@@ -52,4 +52,4 @@ if prompt := st.chat_input("메시지를 입력하세요..."):
     # 예: reply = chat_with_solar(st.session_state.messages)
     reply = "아직 챗 기능은 연결되지 않았습니다."  # placeholder
     st.session_state.messages.append({"role": "assistant", "content": reply})
-    st.experimental_rerun()
+    st.rerun()

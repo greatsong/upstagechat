@@ -536,13 +536,3 @@ elif page == "OCR":
                     1. PDF로 변환 후 다시 시도
                     2. 이미지(PNG/JPG)로 저장 후 업로드
                     """)
-
-# requirements.txt 추가 필요
-st.sidebar.markdown("---")
-st.sidebar.markdown("### 📦 필요 패키지")
-st.sidebar.code("""
-streamlit
-requests
-pandas
-xlsxwriter
-""", language="text")

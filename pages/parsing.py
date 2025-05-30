@@ -34,12 +34,11 @@ if page == "문서 파싱":
         
         # base64_encoding 설정
         if encode_option == "텍스트만":
-            data["base64_encoding"] = '["text"]'  # JSON 형식의 큰따옴표 사용
+            data["base64_encoding"] = '["text"]'
         elif encode_option == "테이블만":
             data["base64_encoding"] = '["table"]'
         elif encode_option == "텍스트와 테이블":
             data["base64_encoding"] = '["text","table"]'
-        # "없음"인 경우 base64_encoding 파라미터를 아예 포함하지 않음
         
         if st.button("파싱 실행"):
             with st.spinner("파싱 중..."):
@@ -59,7 +58,6 @@ elif page == "OCR":
         st.write(f"파일명: {uploaded.name}")
         files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
         
-        # base64_encoding 없이 시도
         data = {
             "ocr": "force",
             "model": "document-parse"
@@ -79,14 +77,73 @@ elif page == "OCR":
                 # text가 비어있으면 HTML에서 추출
                 if not text_content and html_content:
                     import re
-                    # HTML 태그 제거
-                    text_content = re.sub('<[^<]+?>', ' ', html_content)
-                    text_content = re.sub(r'\s+', ' ', text_content).strip()
+                    # HTML 태그 제거 및 줄바꿈 보존
+                    text_content = html_content.replace('<br>', '\n').replace('<br/>', '\n')
+                    text_content = re.sub('<[^<]+?>', '', text_content)
+                    text_content = re.sub(r'[ \t]+', ' ', text_content).strip()
                 
-                st.text_area("추출된 텍스트", text_content, height=300)
+                # 결과 표시 옵션
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.subheader("📝 추출된 텍스트")
+                with col2:
+                    # 복사 버튼 (JavaScript 사용)
+                    if st.button("📋 전체 복사", type="primary"):
+                        st.write("아래 텍스트를 전체 선택(Ctrl+A) 후 복사(Ctrl+C)하세요")
                 
-                # 전체 결과도 확인할 수 있도록 표시
-                with st.expander("전체 응답 데이터 보기"):
+                # 텍스트 표시 방법 선택
+                display_option = st.radio(
+                    "표시 방법",
+                    ["텍스트 영역 (수정 가능)", "코드 블록 (복사 버튼 포함)", "일반 텍스트"],
+                    horizontal=True
+                )
+                
+                if display_option == "텍스트 영역 (수정 가능)":
+                    # 수정 가능한 텍스트 영역
+                    edited_text = st.text_area(
+                        "텍스트를 수정할 수 있습니다:",
+                        text_content,
+                        height=400,
+                        help="텍스트를 선택하고 Ctrl+C(또는 Cmd+C)로 복사할 수 있습니다."
+                    )
+                    
+                    # 수정된 텍스트 다운로드
+                    if edited_text != text_content:
+                        st.download_button(
+                            label="💾 수정된 텍스트 다운로드",
+                            data=edited_text,
+                            file_name=f"{uploaded.name.split('.')[0]}_ocr_edited.txt",
+                            mime="text/plain"
+                        )
+                
+                elif display_option == "코드 블록 (복사 버튼 포함)":
+                    # 자동 복사 버튼이 있는 코드 블록
+                    st.code(text_content, language=None)
+                
+                else:  # 일반 텍스트
+                    # 일반 텍스트로 표시
+                    st.text(text_content)
+                
+                # 원본 텍스트 다운로드 버튼
+                st.download_button(
+                    label="💾 텍스트 파일로 다운로드",
+                    data=text_content,
+                    file_name=f"{uploaded.name.split('.')[0]}_ocr.txt",
+                    mime="text/plain"
+                )
+                
+                # 통계 정보
+                with st.expander("📊 텍스트 통계"):
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("총 문자 수", f"{len(text_content):,}")
+                    with col2:
+                        st.metric("단어 수", f"{len(text_content.split()):,}")
+                    with col3:
+                        st.metric("줄 수", f"{len(text_content.splitlines()):,}")
+                
+                # 전체 응답 데이터
+                with st.expander("🔍 전체 응답 데이터 보기"):
                     st.json(result)
             else:
                 st.error(f"OCR 실패: {resp.status_code} - {resp.text}")

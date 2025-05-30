@@ -21,8 +21,8 @@ if page == "문서 파싱":
         st.write(f"파일명: {uploaded.name}")
         files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
         data = {
-            "ocr": "auto",                     # 자동으로 OCR 수행
-            "base64_encoding": "['text','table']",  # 텍스트와 테이블 모두 추출
+            "ocr": "auto",                             # 자동으로 OCR 수행
+            "base64_encoding": '["text","table"]',   # JSON 표준 포맷으로 텍스트와 테이블 추출
             "model": "document-parse"
         }
         if st.button("파싱 실행"):
@@ -43,8 +43,8 @@ elif page == "OCR":
         st.write(f"파일명: {uploaded.name}")
         files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
         data = {
-            "ocr": "force",                     # 강제 OCR
-            "base64_encoding": "['text']",      # 텍스트만 추출
+            "ocr": "force",                             # 강제 OCR
+            "base64_encoding": '["text"]',             # 텍스트만 추출
             "model": "document-parse"
         }
         if st.button("OCR 실행"):
@@ -67,7 +67,11 @@ elif page == "정보 추출":
             "text": text_input
         }
         with st.spinner("정보 추출 중..."):
-            resp = requests.post(f"{base_url}/information-extraction/universal", headers={**headers, "Content-Type": "application/json"}, json=payload)
+            resp = requests.post(
+                f"{base_url}/information-extraction/universal",
+                headers={**headers, "Content-Type": "application/json"},
+                json=payload
+            )
         if resp.ok:
             result = resp.json()
             st.success("추출 완료!")

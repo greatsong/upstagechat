@@ -1,6 +1,10 @@
 import streamlit as st
 import requests
 import json
+import pandas as pd
+from io import BytesIO
+import base64
+import re
 
 # 페이지 구성 및 API 설정
 st.set_page_config(page_title="📄 Upstage Multi-Tool", layout="wide")
@@ -14,194 +18,104 @@ page = st.sidebar.radio("페이지 선택", ["문서 파싱", "OCR", "정보 추
 # 공통 헤더
 headers = {"Authorization": f"Bearer {api_key}"}
 
-# ─── 정보 추출 페이지 ─────────────────────────────────────────────────────────────
-if page == "정보 추출":
-    st.header("🔎 정보 추출 (Information Extraction)")
+# HTML을 마크다운으로 변환하는 함수
+def html_to_markdown(html_content):
+    """HTML을 마크다운으로 변환"""
+    # 제목 변환
+    html_content = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1', html_content)
+    html_content = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1', html_content)
+    html_content = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1', html_content)
     
-    # 샘플 텍스트
-    sample_text = """John Doe is a 35-year-old software engineer working at TechCorp Inc. 
-He can be reached at john.doe@techcorp.com or +1-555-123-4567. 
-His office is located at 123 Tech Street, San Francisco, CA 94105."""
+    # 줄바꿈
+    html_content = html_content.replace('<br>', '\n').replace('<br/>', '\n')
     
-    # 텍스트 입력
-    text_input = st.text_area(
-        "추출할 텍스트 입력", 
-        value="",
-        height=200,
-        placeholder=sample_text,
-        help="이름, 이메일, 전화번호, 주소 등의 정보가 포함된 텍스트를 입력하세요."
-    )
+    # 단락
+    html_content = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', html_content)
     
-    # 샘플 텍스트 사용 버튼
-    if st.button("샘플 텍스트 사용"):
-        text_input = sample_text
-        st.rerun()
+    # 볼드
+    html_content = re.sub(r'<strong>(.*?)</strong>', r'**\1**', html_content)
+    html_content = re.sub(r'<b>(.*?)</b>', r'**\1**', html_content)
     
-    # API 엔드포인트 선택 (테스트용)
-    endpoint_option = st.selectbox(
-        "API 엔드포인트 (디버깅용)",
-        [
-            "/information-extraction/universal",
-            "/information-extraction",
-            "/extraction/universal",
-            "/universal-extraction"
-        ]
-    )
+    # 이탤릭
+    html_content = re.sub(r'<em>(.*?)</em>', r'*\1*', html_content)
+    html_content = re.sub(r'<i>(.*?)</i>', r'*\1*', html_content)
     
-    # 모델 선택
-    model_option = st.selectbox(
-        "모델 선택",
-        ["universal", "information-extraction", "universal-extraction"]
-    )
+    # 나머지 HTML 태그 제거
+    html_content = re.sub(r'<[^>]+>', '', html_content)
     
-    if st.button("정보 추출 실행", type="primary", disabled=not text_input):
-        # 요청 데이터 준비
-        payload = {
-            "model": model_option,
-            "text": text_input
-        }
-        
-        # 현재 설정 표시
-        with st.expander("📋 요청 정보"):
-            st.write(f"**URL:** {base_url}{endpoint_option}")
-            st.write("**Headers:**")
-            st.json({**headers, "Content-Type": "application/json"})
-            st.write("**Payload:**")
-            st.json(payload)
-        
-        with st.spinner("정보 추출 중..."):
-            try:
-                # POST 요청
-                resp = requests.post(
-                    f"{base_url}{endpoint_option}",
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json=payload,
-                    timeout=30
-                )
-                
-                # 응답 처리
-                if resp.ok:
-                    result = resp.json()
-                    st.success("✅ 추출 완료!")
-                    
-                    # 결과 표시
-                    if isinstance(result, dict):
-                        # 추출된 엔티티 표시
-                        if "entities" in result:
-                            st.subheader("📊 추출된 정보")
-                            entities = result["entities"]
-                            
-                            # 엔티티 타입별로 그룹화
-                            entity_types = {}
-                            for entity in entities:
-                                etype = entity.get("type", "Unknown")
-                                if etype not in entity_types:
-                                    entity_types[etype] = []
-                                entity_types[etype].append(entity)
-                            
-                            # 타입별로 표시
-                            for etype, items in entity_types.items():
-                                with st.expander(f"{etype} ({len(items)}개)"):
-                                    for item in items:
-                                        col1, col2 = st.columns([1, 3])
-                                        with col1:
-                                            st.write("**값:**")
-                                        with col2:
-                                            st.write(item.get("value", ""))
-                                        if "confidence" in item:
-                                            st.progress(item["confidence"])
-                                            st.caption(f"신뢰도: {item['confidence']:.2%}")
-                                        st.divider()
-                        
-                        # 전체 응답 표시
-                        with st.expander("🔍 전체 응답 데이터"):
-                            st.json(result)
-                    else:
-                        st.warning("예상과 다른 응답 형식입니다.")
-                        st.json(result)
-                        
-                else:
-                    st.error(f"❌ 추출 실패: {resp.status_code}")
-                    
-                    # 에러 상세 정보
-                    try:
-                        error_data = resp.json()
-                        st.error(f"에러 메시지: {error_data}")
-                        
-                        # 에러 코드별 해결책
-                        if resp.status_code == 404:
-                            st.info("""
-                            💡 **404 에러 해결 방법:**
-                            1. 다른 API 엔드포인트를 선택해보세요
-                            2. API 문서를 확인하여 정확한 엔드포인트를 확인하세요
-                            3. 모델 이름이 올바른지 확인하세요
-                            """)
-                        elif resp.status_code == 400:
-                            st.info("""
-                            💡 **400 에러 해결 방법:**
-                            1. 텍스트가 비어있지 않은지 확인하세요
-                            2. 모델 이름이 올바른지 확인하세요
-                            3. 텍스트에 특수문자가 있다면 제거해보세요
-                            """)
-                        elif resp.status_code == 401:
-                            st.info("""
-                            💡 **401 에러 해결 방법:**
-                            1. API 키가 올바른지 확인하세요
-                            2. API 키가 만료되지 않았는지 확인하세요
-                            """)
-                            
-                    except:
-                        st.error(f"에러 응답: {resp.text}")
-                    
-                    # 디버깅 정보
-                    with st.expander("🐛 디버깅 정보"):
-                        st.write("**요청 URL:**", f"{base_url}{endpoint_option}")
-                        st.write("**요청 헤더:**")
-                        st.code(json.dumps(dict(resp.request.headers), indent=2))
-                        st.write("**요청 본문:**")
-                        st.code(resp.request.body)
-                        st.write("**응답 헤더:**")
-                        st.code(json.dumps(dict(resp.headers), indent=2))
-                        
-            except requests.exceptions.Timeout:
-                st.error("⏱️ 요청 시간이 초과되었습니다. 다시 시도해주세요.")
-            except requests.exceptions.ConnectionError:
-                st.error("🔌 서버에 연결할 수 없습니다. 인터넷 연결을 확인해주세요.")
-            except Exception as e:
-                st.error(f"❌ 예상치 못한 오류: {str(e)}")
-                st.exception(e)
+    return html_content.strip()
 
-# ─── 문서 파싱 페이지 (기존 코드) ─────────────────────────────────────────────
-elif page == "문서 파싱":
+# 표 추출 함수
+def extract_tables_from_html(html_content):
+    """HTML에서 표 추출"""
+    tables = []
+    table_pattern = r'<table[^>]*>(.*?)</table>'
+    table_matches = re.findall(table_pattern, html_content, re.DOTALL)
+    
+    for table_html in table_matches:
+        rows = []
+        row_pattern = r'<tr[^>]*>(.*?)</tr>'
+        row_matches = re.findall(row_pattern, table_html, re.DOTALL)
+        
+        for row_html in row_matches:
+            cells = []
+            cell_pattern = r'<t[hd][^>]*>(.*?)</t[hd]>'
+            cell_matches = re.findall(cell_pattern, row_html, re.DOTALL)
+            
+            for cell in cell_matches:
+                # HTML 태그 제거
+                clean_cell = re.sub(r'<[^>]+>', '', cell).strip()
+                cells.append(clean_cell)
+            
+            if cells:
+                rows.append(cells)
+        
+        if rows:
+            tables.append(rows)
+    
+    return tables
+
+# ─── 문서 파싱 페이지 ───────────────────────────────────────────────────────────
+if page == "문서 파싱":
     st.header("📄 문서 파싱 (Document Parsing)")
     uploaded = st.file_uploader("PDF/이미지 파일 업로드", type=["pdf","png","jpg","jpeg"])
     
     if uploaded:
         st.write(f"파일명: {uploaded.name}")
         
-        # base64_encoding 옵션
-        encode_option = st.selectbox(
-            "Base64 인코딩 옵션",
-            ["없음", "테이블만", "텍스트만", "텍스트와 테이블"]
-        )
+        # 옵션 설정
+        col1, col2 = st.columns(2)
+        with col1:
+            encode_option = st.selectbox(
+                "Base64 인코딩 옵션",
+                ["없음", "표만", "텍스트만", "텍스트와 표"]
+            )
+        with col2:
+            output_format = st.multiselect(
+                "출력 형식",
+                ["html", "text", "markdown"],
+                default=["html", "markdown"]
+            )
         
         data = {
             "ocr": "auto",
-            "model": "document-parse"
+            "model": "document-parse",
+            "coordinates": "true"
         }
+        
+        # output_formats 설정
+        if output_format:
+            data["output_formats"] = str(output_format).replace("'", '"')
         
         # base64_encoding 설정
         if encode_option == "텍스트만":
             data["base64_encoding"] = '["text"]'
-        elif encode_option == "테이블만":
+        elif encode_option == "표만":
             data["base64_encoding"] = '["table"]'
-        elif encode_option == "텍스트와 테이블":
+        elif encode_option == "텍스트와 표":
             data["base64_encoding"] = '["text","table"]'
         
-        if st.button("파싱 실행"):
+        if st.button("파싱 실행", type="primary"):
             with st.spinner("파싱 중..."):
                 files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
                 resp = requests.post(f"{base_url}/document-digitization", headers=headers, files=files, data=data)
@@ -209,11 +123,212 @@ elif page == "문서 파싱":
             if resp.ok:
                 result = resp.json()
                 st.success("✅ 파싱 성공!")
-                st.json(result)
+                
+                # 결과 요약
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("추출된 요소", len(result.get("elements", [])))
+                with col2:
+                    st.metric("처리된 페이지", result.get("usage", {}).get("pages", 0))
+                with col3:
+                    # 요소 타입 카운트
+                    categories = {}
+                    for elem in result.get("elements", []):
+                        cat = elem.get("category", "unknown")
+                        categories[cat] = categories.get(cat, 0) + 1
+                    st.metric("요소 타입", len(categories))
+                
+                # 탭으로 결과 표시
+                tabs = st.tabs(["📄 문서 뷰", "📊 표 추출", "📝 마크다운", "💾 다운로드", "🔍 원본 데이터"])
+                
+                # 문서 뷰 탭
+                with tabs[0]:
+                    st.subheader("렌더링된 문서")
+                    
+                    html_content = result.get("content", {}).get("html", "")
+                    if html_content:
+                        # CSS 스타일 추가
+                        styled_html = f"""
+                        <style>
+                            .parsed-content {{
+                                font-family: 'Noto Sans KR', sans-serif;
+                                line-height: 1.6;
+                                max-width: 800px;
+                                margin: 0 auto;
+                                padding: 20px;
+                                background: white;
+                                border-radius: 10px;
+                                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                            }}
+                            .parsed-content h1 {{ 
+                                color: #2c3e50; 
+                                border-bottom: 2px solid #3498db;
+                                padding-bottom: 10px;
+                                margin: 20px 0;
+                            }}
+                            .parsed-content h2 {{ 
+                                color: #34495e;
+                                margin: 15px 0;
+                            }}
+                            .parsed-content h3 {{ 
+                                color: #7f8c8d;
+                                margin: 10px 0;
+                            }}
+                            .parsed-content p {{
+                                margin: 10px 0;
+                                text-align: justify;
+                            }}
+                            .parsed-content table {{
+                                border-collapse: collapse;
+                                width: 100%;
+                                margin: 20px 0;
+                            }}
+                            .parsed-content th, .parsed-content td {{
+                                border: 1px solid #ddd;
+                                padding: 8px;
+                                text-align: left;
+                            }}
+                            .parsed-content th {{
+                                background-color: #3498db;
+                                color: white;
+                            }}
+                            .parsed-content tr:nth-child(even) {{
+                                background-color: #f2f2f2;
+                            }}
+                        </style>
+                        <div class="parsed-content">
+                            {html_content}
+                        </div>
+                        """
+                        st.markdown(styled_html, unsafe_allow_html=True)
+                    
+                    # Base64 인코딩된 이미지 표시
+                    for elem in result.get("elements", []):
+                        if elem.get("base64_encoding"):
+                            cat = elem.get("category", "unknown")
+                            st.write(f"**{cat} 이미지:**")
+                            img_data = base64.b64decode(elem["base64_encoding"])
+                            st.image(img_data, use_column_width=True)
+                
+                # 표 추출 탭
+                with tabs[1]:
+                    st.subheader("추출된 표")
+                    
+                    # HTML에서 표 추출
+                    tables = extract_tables_from_html(html_content)
+                    
+                    if tables:
+                        for i, table_data in enumerate(tables):
+                            st.write(f"### 표 {i+1}")
+                            
+                            # 데이터프레임으로 변환
+                            if len(table_data) > 1:
+                                df = pd.DataFrame(table_data[1:], columns=table_data[0])
+                            else:
+                                df = pd.DataFrame(table_data)
+                            
+                            # 표 표시
+                            st.dataframe(df, use_container_width=True)
+                            
+                            # CSV 다운로드
+                            csv = df.to_csv(index=False)
+                            st.download_button(
+                                f"💾 표 {i+1} CSV 다운로드",
+                                csv,
+                                f"table_{i+1}.csv",
+                                "text/csv",
+                                key=f"csv_{i}"
+                            )
+                    else:
+                        st.info("추출된 표가 없습니다.")
+                
+                # 마크다운 탭
+                with tabs[2]:
+                    st.subheader("마크다운 변환")
+                    
+                    # API에서 제공하는 마크다운 우선 사용
+                    markdown_content = result.get("content", {}).get("markdown", "")
+                    
+                    # 없으면 HTML에서 변환
+                    if not markdown_content and html_content:
+                        markdown_content = html_to_markdown(html_content)
+                    
+                    if markdown_content:
+                        # 마크다운 미리보기
+                        st.markdown(markdown_content)
+                        
+                        # 편집 가능한 텍스트 영역
+                        with st.expander("마크다운 편집"):
+                            edited_md = st.text_area(
+                                "마크다운 편집", 
+                                markdown_content, 
+                                height=400
+                            )
+                    else:
+                        st.info("마크다운 콘텐츠가 없습니다.")
+                
+                # 다운로드 탭
+                with tabs[3]:
+                    st.subheader("다운로드 옵션")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # HTML 다운로드
+                        if html_content:
+                            # 완전한 HTML 문서 생성
+                            full_html = f"""
+                            <!DOCTYPE html>
+                            <html>
+                            <head>
+                                <meta charset="UTF-8">
+                                <title>{uploaded.name} - Parsed</title>
+                                <style>
+                                    body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                                    table {{ border-collapse: collapse; width: 100%; }}
+                                    th, td {{ border: 1px solid #ddd; padding: 8px; }}
+                                    th {{ background-color: #4CAF50; color: white; }}
+                                </style>
+                            </head>
+                            <body>
+                                {html_content}
+                            </body>
+                            </html>
+                            """
+                            st.download_button(
+                                "📄 HTML 다운로드",
+                                full_html,
+                                f"{uploaded.name.split('.')[0]}_parsed.html",
+                                "text/html"
+                            )
+                    
+                    with col2:
+                        # 마크다운 다운로드
+                        if markdown_content:
+                            st.download_button(
+                                "📝 마크다운 다운로드",
+                                markdown_content,
+                                f"{uploaded.name.split('.')[0]}_parsed.md",
+                                "text/markdown"
+                            )
+                    
+                    # JSON 다운로드
+                    st.download_button(
+                        "🔍 JSON 데이터 다운로드",
+                        json.dumps(result, ensure_ascii=False, indent=2),
+                        f"{uploaded.name.split('.')[0]}_parsed.json",
+                        "application/json"
+                    )
+                
+                # 원본 데이터 탭
+                with tabs[4]:
+                    st.subheader("원본 JSON 데이터")
+                    st.json(result)
+                    
             else:
                 st.error(f"파싱 실패: {resp.status_code} - {resp.text}")
 
-# ─── OCR 페이지 (기존 코드) ─────────────────────────────────────────────────────
+# ─── OCR 페이지 (기존 코드 유지) ─────────────────────────────────────────────
 elif page == "OCR":
     st.header("🔍 OCR (Document OCR)")
     uploaded = st.file_uploader("PDF/이미지 파일 업로드", type=["pdf","png","jpg","jpeg"])

@@ -88,6 +88,37 @@ def extract_tables_from_html(html_content):
     
     return tables
 
+# 안전한 DataFrame 생성 함수
+def safe_create_dataframe(table_data):
+    """안전하게 DataFrame 생성"""
+    try:
+        if not table_data:
+            return pd.DataFrame()
+        
+        # 모든 행의 열 개수 확인
+        max_cols = max(len(row) for row in table_data)
+        
+        # 모든 행을 같은 길이로 맞춤
+        normalized_data = []
+        for row in table_data:
+            normalized_row = row + [''] * (max_cols - len(row))
+            normalized_data.append(normalized_row)
+        
+        # 첫 번째 행을 헤더로 사용할 수 있는지 확인
+        if len(normalized_data) > 1:
+            # 첫 번째 행을 헤더로 사용
+            df = pd.DataFrame(normalized_data[1:], columns=normalized_data[0])
+        else:
+            # 헤더 없이 생성
+            df = pd.DataFrame(normalized_data)
+        
+        return df
+        
+    except Exception as e:
+        st.error(f"DataFrame 생성 오류: {str(e)}")
+        # 오류 발생 시 원본 데이터 그대로 반환
+        return pd.DataFrame(table_data)
+
 # ─── 문서 파싱 페이지 ───────────────────────────────────────────────────────────
 if page == "문서 파싱":
     st.header("📄 문서 파싱 (Document Parsing)")
@@ -111,8 +142,8 @@ if page == "문서 파싱":
             st.metric("파일 형식", file_ext)
         
         # HWP 파일 경고
-        if file_ext == "HWP":
-            st.warning("⚠️ HWP 파일은 테스트가 필요합니다. 지원되지 않을 수 있습니다.")
+        #if file_ext == "HWP":
+        #    st.warning("⚠️ HWP 파일은 테스트가 필요합니다. 지원되지 않을 수 있습니다.")
         
         # 옵션 설정
         col1, col2 = st.columns(2)
@@ -125,7 +156,7 @@ if page == "문서 파싱":
             output_format = st.multiselect(
                 "출력 형식",
                 ["html", "text", "markdown"],
-                default=["html", "markdown"]
+                default=["html"]
             )
         
         # 고급 옵션
@@ -273,36 +304,44 @@ if page == "문서 파싱":
                         for i, table_data in enumerate(tables):
                             st.write(f"### 표 {i+1}")
                             
-                            if len(table_data) > 1:
-                                df = pd.DataFrame(table_data[1:], columns=table_data[0])
+                            # 안전하게 DataFrame 생성
+                            df = safe_create_dataframe(table_data)
+                            
+                            if not df.empty:
+                                st.dataframe(df, use_container_width=True)
+                                
+                                col1, col2 = st.columns(2)
+                                with col1:
+                                    csv = df.to_csv(index=False, encoding='utf-8-sig')
+                                    st.download_button(
+                                        f"💾 CSV 다운로드",
+                                        csv.encode('utf-8-sig'),
+                                        f"table_{i+1}.csv",
+                                        "text/csv",
+                                        key=f"csv_{i}"
+                                    )
+                                with col2:
+                                    try:
+                                        # 엑셀 다운로드
+                                        buffer = BytesIO()
+                                        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                                            df.to_excel(writer, index=False, sheet_name=f'Table_{i+1}')
+                                        buffer.seek(0)
+                                        st.download_button(
+                                            f"💾 Excel 다운로드",
+                                            buffer,
+                                            f"table_{i+1}.xlsx",
+                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                            key=f"excel_{i}"
+                                        )
+                                    except Exception as e:
+                                        st.error(f"Excel 변환 오류: {str(e)}")
                             else:
-                                df = pd.DataFrame(table_data)
-                            
-                            st.dataframe(df, use_container_width=True)
-                            
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                csv = df.to_csv(index=False, encoding='utf-8-sig')
-                                st.download_button(
-                                    f"💾 CSV 다운로드",
-                                    csv.encode('utf-8-sig'),
-                                    f"table_{i+1}.csv",
-                                    "text/csv",
-                                    key=f"csv_{i}"
-                                )
-                            with col2:
-                                # 엑셀 다운로드
-                                buffer = BytesIO()
-                                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                                    df.to_excel(writer, index=False, sheet_name=f'Table_{i+1}')
-                                buffer.seek(0)
-                                st.download_button(
-                                    f"💾 Excel 다운로드",
-                                    buffer,
-                                    f"table_{i+1}.xlsx",
-                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                    key=f"excel_{i}"
-                                )
+                                st.warning(f"표 {i+1}을 DataFrame으로 변환할 수 없습니다.")
+                                # 원본 데이터 표시
+                                st.text("원본 데이터:")
+                                for row in table_data:
+                                    st.text(" | ".join(row))
                     else:
                         st.info("추출된 표가 없습니다.")
                 
@@ -429,7 +468,10 @@ if page == "문서 파싱":
                     
             else:
                 st.error(f"❌ 파싱 실패: {resp.status_code}")
-                error_msg = resp.json() if resp.headers.get('content-type') == 'application/json' else resp.text
+                try:
+                    error_msg = resp.json()
+                except:
+                    error_msg = resp.text
                 st.error(f"오류 메시지: {error_msg}")
                 
                 # 파일 형식별 오류 처리
@@ -439,19 +481,6 @@ if page == "문서 파싱":
                     1. HWP를 PDF로 변환 후 업로드
                     2. 한글 프로그램에서 "다른 이름으로 저장" → PDF 선택
                     3. 온라인 HWP→PDF 변환 서비스 이용
-                    """)
-                elif "too many pages" in str(error_msg).lower():
-                    st.info("""
-                    💡 **페이지 수 초과 해결 방법:**
-                    1. 문서를 여러 부분으로 나누기
-                    2. 필요한 페이지만 추출하여 새 PDF 생성
-                    3. 온라인 PDF 분할 도구 사용
-                    """)
-                elif "unsupported" in str(error_msg).lower():
-                    st.info(f"""
-                    💡 **{file_ext} 형식 미지원:**
-                    - 지원 형식: PDF, PNG, JPG, JPEG
-                    - 다른 형식으로 변환 후 시도해주세요
                     """)
 
 # ─── OCR 페이지 ─────────────────────────────────────────────────────────────────
@@ -528,11 +557,3 @@ elif page == "OCR":
                     )
             else:
                 st.error(f"❌ OCR 실패: {resp.status_code} - {resp.text}")
-                
-                file_ext = uploaded.name.split('.')[-1].upper()
-                if file_ext in ["HWP", "DOCX"]:
-                    st.info(f"""
-                    💡 **{file_ext} 파일 처리 실패 시:**
-                    1. PDF로 변환 후 다시 시도
-                    2. 이미지(PNG/JPG)로 저장 후 업로드
-                    """)

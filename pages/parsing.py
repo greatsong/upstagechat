@@ -20,12 +20,27 @@ if page == "문서 파싱":
     if uploaded:
         st.write(f"파일명: {uploaded.name}")
         files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
-        # base64_encoding을 문자열 형태의 리스트로 전달
+        
+        # base64_encoding 옵션 선택
+        encode_option = st.selectbox(
+            "Base64 인코딩 옵션",
+            ["없음", "텍스트만", "테이블만", "텍스트와 테이블"]
+        )
+        
         data = {
             "ocr": "auto",
-            "base64_encoding": "['text', 'table']",  # 문자열로 리스트 표현
             "model": "document-parse"
         }
+        
+        # base64_encoding 설정
+        if encode_option == "텍스트만":
+            data["base64_encoding"] = '["text"]'  # JSON 형식의 큰따옴표 사용
+        elif encode_option == "테이블만":
+            data["base64_encoding"] = '["table"]'
+        elif encode_option == "텍스트와 테이블":
+            data["base64_encoding"] = '["text","table"]'
+        # "없음"인 경우 base64_encoding 파라미터를 아예 포함하지 않음
+        
         if st.button("파싱 실행"):
             with st.spinner("파싱 중..."):
                 resp = requests.post(f"{base_url}/document-digitization", headers=headers, files=files, data=data)
@@ -43,29 +58,36 @@ elif page == "OCR":
     if uploaded:
         st.write(f"파일명: {uploaded.name}")
         files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
+        
+        # base64_encoding 없이 시도
         data = {
             "ocr": "force",
-            "base64_encoding": "['text']",  # 문자열로 리스트 표현
             "model": "document-parse"
         }
+        
         if st.button("OCR 실행"):
             with st.spinner("OCR 처리 중..."):
                 resp = requests.post(f"{base_url}/document-digitization", headers=headers, files=files, data=data)
             if resp.ok:
                 result = resp.json()
                 st.success("OCR 완료!")
-                # content 내의 text 추출
+                
+                # HTML 콘텐츠에서 텍스트 추출
+                html_content = result.get("content", {}).get("html", "")
                 text_content = result.get("content", {}).get("text", "")
-                if not text_content and "elements" in result:
-                    # elements에서 텍스트 추출
-                    texts = []
-                    for elem in result["elements"]:
-                        elem_text = elem.get("content", {}).get("text", "")
-                        if elem_text:
-                            texts.append(elem_text)
-                    text_content = "\n".join(texts)
+                
+                # text가 비어있으면 HTML에서 추출
+                if not text_content and html_content:
+                    import re
+                    # HTML 태그 제거
+                    text_content = re.sub('<[^<]+?>', ' ', html_content)
+                    text_content = re.sub(r'\s+', ' ', text_content).strip()
                 
                 st.text_area("추출된 텍스트", text_content, height=300)
+                
+                # 전체 결과도 확인할 수 있도록 표시
+                with st.expander("전체 응답 데이터 보기"):
+                    st.json(result)
             else:
                 st.error(f"OCR 실패: {resp.status_code} - {resp.text}")
 

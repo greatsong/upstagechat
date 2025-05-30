@@ -1,78 +1,76 @@
-# app.py
-# app.py
 import streamlit as st
-from openai import OpenAI
 import requests
 
-# ─── 페이지 설정 ─────────────────────────────────────────────────────────────
-st.set_page_config(page_title="🌞 Upstage Solar Chat & OCR", layout="wide")
-st.title("📄 Upstage Solar Chat & Document OCR")
-st.markdown("🛠️ 이 앱은 **석리송**이 만들었어요! 🎉")
+# 페이지 구성 및 API 설정
+st.set_page_config(page_title="📄 Upstage Multi-Tool", layout="wide")
+api_key = st.secrets["upstage_api_key"]
+base_url = "https://api.upstage.ai/v1"
 
-# ─── API 클라이언트 초기화 ───────────────────────────────────────────────────
-api_key     = st.secrets["upstage_api_key"]
-chat_client = OpenAI(api_key=api_key, base_url="https://api.upstage.ai/v1")
-doc_url     = "https://api.upstage.ai/v1/document-digitization"
+# 사이드바 네비게이션
+st.sidebar.title("🔧 기능 선택")
+page = st.sidebar.radio("페이지 선택", ["문서 파싱", "OCR", "정보 추출"] )
 
-def chat_with_solar(messages):
-    resp = chat_client.chat.completions.create(
-        model="solar-pro",
-        messages=messages
-    )
-    return resp.choices[0].message.content
+# 공통 헤더
+headers = {"Authorization": f"Bearer {api_key}"}
 
-# ─── 세션 상태 초기화 ─────────────────────────────────────────────────────────
-if "messages" not in st.session_state:
-    st.session_state.messages = [
-        {"role": "system", "content": "You are a helpful assistant."}
-    ]
-
-# ─── 레이아웃: 왼쪽 채팅 · 오른쪽 OCR ────────────────────────────────────────
-col1, col2 = st.columns(2)
-
-with col1:
-    st.header("💬 Chat")
-    # 대화 내역 표시
-    for msg in st.session_state.messages:
-        role = "You" if msg["role"] == "user" else "Assistant"
-        st.markdown(f"**{role}:** {msg['content']}")
-
-    # 사용자 입력
-    user_input = st.text_input("메시지를 입력하고 ▶ 눌러 보내세요", key="input")
-    if st.button("▶ Send"):
-        st.session_state.messages.append({"role": "user", "content": user_input})
-        with st.spinner("응답 생성 중…"):
-            reply = chat_with_solar(st.session_state.messages)
-        st.session_state.messages.append({"role": "assistant", "content": reply})
-        # 입력창 비우기
-        st.session_state.input = ""
-        st.experimental_rerun()
-
-with col2:
-    st.header("📎 Document OCR")
-    uploaded_file = st.file_uploader("파일 업로드 (PDF • PNG • JPG)", type=["pdf","png","jpg","jpeg"])
-    if uploaded_file:
-        force = st.checkbox("강제 OCR (force)", value=True)
-        tables = st.checkbox("테이블만 추출", value=False)
-        if st.button("OCR 실행"):
-            files = {"document": (uploaded_file.name, uploaded_file.read(), uploaded_file.type)}
-            data = {
-                "ocr": "force" if force else "auto",
-                "base64_encoding": "['table']" if tables else "['text','table']",
-                "model": "document-parse"
-            }
-            headers = {"Authorization": f"Bearer {api_key}"}
-            with st.spinner("문서 처리 중…"):
-                resp = requests.post(doc_url, headers=headers, files=files, data=data)
+# ─── 문서 파싱 페이지 ───────────────────────────────────────────────────────────
+if page == "문서 파싱":
+    st.header("📄 문서 파싱 (Document Parsing)")
+    uploaded = st.file_uploader("PDF/이미지 파일 업로드", type=["pdf","png","jpg","jpeg"])
+    if uploaded:
+        st.write(f"파일명: {uploaded.name}")
+        files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
+        data = {
+            "ocr": "auto",                     # 자동으로 OCR 수행
+            "base64_encoding": "['text','table']",  # 텍스트와 테이블 모두 추출
+            "model": "document-parse"
+        }
+        if st.button("파싱 실행"):
+            with st.spinner("파싱 중..."):
+                resp = requests.post(f"{base_url}/document-digitization", headers=headers, files=files, data=data)
             if resp.ok:
-                st.success("✅ OCR 완료!")
-                st.json(resp.json())
+                result = resp.json()
+                st.success("파싱 완료!")
+                st.json(result)
             else:
-                st.error(f"❌ OCR 실패: {resp.status_code}")
+                st.error(f"파싱 실패: {resp.status_code} - {resp.text}")
 
-# ─── 사용법 안내 ─────────────────────────────────────────────────────────────
-st.markdown("""
-**사용 방법 요약**  
-1. `.streamlit/secrets.toml`에 API 키를 넣으세요:
-   ```toml
-   upstage_api_key = "YOUR_UPSTAGE_API_KEY"
+# ─── OCR 페이지 ─────────────────────────────────────────────────────────────────
+elif page == "OCR":
+    st.header("🔍 OCR (Document OCR)")
+    uploaded = st.file_uploader("PDF/이미지 파일 업로드", type=["pdf","png","jpg","jpeg"])
+    if uploaded:
+        st.write(f"파일명: {uploaded.name}")
+        files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
+        data = {
+            "ocr": "force",                     # 강제 OCR
+            "base64_encoding": "['text']",      # 텍스트만 추출
+            "model": "document-parse"
+        }
+        if st.button("OCR 실행"):
+            with st.spinner("OCR 처리 중..."):
+                resp = requests.post(f"{base_url}/document-digitization", headers=headers, files=files, data=data)
+            if resp.ok:
+                result = resp.json()
+                st.success("OCR 완료!")
+                st.text_area("추출된 텍스트", result.get("text", ""), height=300)
+            else:
+                st.error(f"OCR 실패: {resp.status_code} - {resp.text}")
+
+# ─── 정보 추출 페이지 ─────────────────────────────────────────────────────────────
+elif page == "정보 추출":
+    st.header("🔎 정보 추출 (Information Extraction)")
+    text_input = st.text_area("추출할 텍스트 입력", height=200)
+    if st.button("정보 추출 실행"):
+        payload = {
+            "model": "universal",
+            "text": text_input
+        }
+        with st.spinner("정보 추출 중..."):
+            resp = requests.post(f"{base_url}/information-extraction/universal", headers={**headers, "Content-Type": "application/json"}, json=payload)
+        if resp.ok:
+            result = resp.json()
+            st.success("추출 완료!")
+            st.json(result)
+        else:
+            st.error(f"추출 실패: {resp.status_code} - {resp.text}")

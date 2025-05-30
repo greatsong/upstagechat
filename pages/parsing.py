@@ -20,11 +20,13 @@ if page == "문서 파싱":
     if uploaded:
         st.write(f"파일명: {uploaded.name}")
         files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
-        data = {
-            "ocr": "auto",                             # 자동으로 OCR 수행
-            "base64_encoding": '["text","table"]',   # JSON 표준 포맷으로 텍스트와 테이블 추출
-            "model": "document-parse"
-        }
+        # 배열 형태의 form-data 필드로 보내기 위해 리스트 오브 튜플 사용
+        data = [
+            ("ocr", "auto"),
+            ("base64_encoding", "text"),
+            ("base64_encoding", "table"),
+            ("model", "document-parse")
+        ]
         if st.button("파싱 실행"):
             with st.spinner("파싱 중..."):
                 resp = requests.post(f"{base_url}/document-digitization", headers=headers, files=files, data=data)
@@ -42,11 +44,11 @@ elif page == "OCR":
     if uploaded:
         st.write(f"파일명: {uploaded.name}")
         files = {"document": (uploaded.name, uploaded.read(), uploaded.type)}
-        data = {
-            "ocr": "force",                             # 강제 OCR
-            "base64_encoding": '["text"]',             # 텍스트만 추출
-            "model": "document-parse"
-        }
+        data = [
+            ("ocr", "force"),
+            ("base64_encoding", "text"),
+            ("model", "document-parse")
+        ]
         if st.button("OCR 실행"):
             with st.spinner("OCR 처리 중..."):
                 resp = requests.post(f"{base_url}/document-digitization", headers=headers, files=files, data=data)

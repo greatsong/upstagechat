@@ -1,3 +1,4 @@
 openai
 plotly
 xlsxwriter
+docx 
